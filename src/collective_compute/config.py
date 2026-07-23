@@ -3,6 +3,10 @@
 from dataclasses import dataclass
 from os import getenv
 
+from dotenv import load_dotenv
+
+_ = load_dotenv()
+
 MAX_GPU_USAGE_PERCENT = 100
 
 
