@@ -1,0 +1,26 @@
+# Python bytecode and tooling caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments and local configuration
+.venv/
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+build/
+dist/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary directories created by pytest on Windows
+pytest-cache-files-*/

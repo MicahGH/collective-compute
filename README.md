@@ -1,22 +1,47 @@
 # CollectiveCompute
 
-CollectiveCompute is a decentralised network that allows users to share GPU compute for running open-source large language models (LLMs).
+Initial MVP implementation of a central gateway and provider-node boundary.
 
-Providers contribute GPU resources to the network, while clients submit inference requests through a simple HTTPS API.
+## Run locally
 
-**Status:** 🚧 Work in progress
+Install [uv](https://docs.astral.sh/uv/) if needed, then create the local
+environment and install the locked dependencies:
 
-## Goals
+```powershell
+uv sync --extra dev
+uv run uvicorn collective_compute.gateway.app:app --reload --port 8000
+```
 
-- Share GPU compute between users.
-- Run open-source LLMs remotely.
-- Keep the client API simple.
-- Support multiple providers.
+In another terminal, start a sample provider node:
 
-## Documentation
+```powershell
+uv run uvicorn collective_compute.node.app:app --port 8001
+```
 
-- `docs/SPEC.md` – Functional specification
+Register the node with the gateway using `POST /providers/register`, setting
+`endpoint_url` to `http://localhost:8001`. The gateway exposes `/docs` for the
+available API schema.
 
-## License
+Run tests with:
 
-TBD
+```powershell
+uv run pytest
+```
+
+## Quality checks
+
+The project enforces Black formatting, Ruff linting, and strict Pyright/Pylance
+type checking. Run all checks before committing:
+
+```powershell
+uv run black --check .
+uv run ruff check .
+uv run pyright
+```
+
+Install the Git pre-commit hook to run these checks automatically before every
+commit:
+
+```powershell
+uv run pre-commit install
+```

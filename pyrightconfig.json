@@ -1,0 +1,20 @@
+{
+  "include": ["src", "tests"],
+  "exclude": [".venv", "build", "dist"],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": "error",
+  "reportUnknownMemberType": "error",
+  "reportUnknownVariableType": "error",
+  "reportUnknownArgumentType": "error",
+  "reportUnknownLambdaType": "error",
+  "reportUnusedImport": "error",
+  "reportUnusedVariable": "error",
+  "reportUnusedCallResult": "error",
+  "reportImplicitOverride": "error",
+  "reportImplicitStringConcatenation": "error",
+  "reportPrivateUsage": "error",
+  "reportUnnecessaryTypeIgnoreComment": "error",
+  "venvPath": ".",
+  "venv": ".venv"
+}
