@@ -1,0 +1,21 @@
+default_language_version:
+  python: python3.11
+
+repos:
+  - repo: local
+    hooks:
+      - id: black
+        name: Black formatting
+        entry: uv run black --check .
+        language: system
+        pass_filenames: false
+      - id: ruff
+        name: Ruff linting
+        entry: uv run ruff check .
+        language: system
+        pass_filenames: false
+      - id: pyright
+        name: Pyright strict type checking
+        entry: uv run pyright
+        language: system
+        pass_filenames: false
