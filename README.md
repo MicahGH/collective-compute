@@ -1,6 +1,6 @@
 # CollectiveCompute
 
-CollectiveCompute is a decentralized network that allows users to share GPU compute for running open-source large language models (LLMs).
+CollectiveCompute is a decentralised network that allows users to share GPU compute for running open-source large language models (LLMs).
 
 Providers contribute GPU resources to the network, while clients submit inference requests through a simple HTTPS API.
 
