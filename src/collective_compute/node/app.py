@@ -1,5 +1,21 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+"""Provider-node HTTP service and gateway liveness client."""
+
+import asyncio
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager, suppress
+from hmac import compare_digest
+from typing import Annotated, cast
+
+import httpx
+from fastapi import FastAPI, Header, HTTPException, Request, status
+from pydantic import BaseModel, HttpUrl, TypeAdapter
+
+from collective_compute.config import NodeSettings
+from collective_compute.gateway.schemas import GenerationParameters, ProviderRegistration
+
+LOGGER = logging.getLogger(__name__)
+ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
 
 
 class NodeInferenceRequest(BaseModel):
@@ -7,6 +23,7 @@ class NodeInferenceRequest(BaseModel):
 
     model: str
     prompt: str
+    parameters: GenerationParameters
 
 
 class NodeInferenceResponse(BaseModel):
@@ -15,20 +32,102 @@ class NodeInferenceResponse(BaseModel):
     response: str
 
 
-def create_app() -> FastAPI:
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    """Start and stop the node's provider registration loop."""
+    settings = _settings(app)
+    client = httpx.AsyncClient(timeout=15.0)
+    app.state.http_client = client
+    app.state.heartbeat_task = asyncio.create_task(_maintain_registration(client, settings))
+    try:
+        yield
+    finally:
+        task = app.state.heartbeat_task
+        _ = task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        await client.aclose()
+
+
+def create_app(settings: NodeSettings | None = None) -> FastAPI:
     """Build the provider-node application."""
-    app = FastAPI(title="CollectiveCompute Provider Node", version="0.1.0")
+    app = FastAPI(title="CollectiveCompute Provider Node", version="0.1.0", lifespan=lifespan)
+    app.state.settings = settings
 
     @app.post("/inference")
     async def inference(  # pyright: ignore[reportUnusedFunction]
         payload: NodeInferenceRequest,
+        request: Request,
+        api_key: ApiKeyHeader = None,
     ) -> NodeInferenceResponse:
-        # Model download and llama.cpp execution will be added behind this stable boundary.
+        """Validate a gateway request and return the node's inference result."""
+        _require_provider_key(api_key, _settings(request.app).provider_api_key)
         return NodeInferenceResponse(
             response=f"Provider node received prompt for {payload.model}: {payload.prompt}"
         )
 
     return app
+
+
+async def _maintain_registration(client: httpx.AsyncClient, settings: NodeSettings) -> None:
+    """Register the node and keep its gateway heartbeat alive until cancelled."""
+    while True:
+        try:
+            await _register(client, settings)
+            await _heartbeat_until_failure(client, settings)
+        except httpx.HTTPError:
+            LOGGER.warning("Gateway is unavailable; retrying registration shortly")
+        await asyncio.sleep(settings.heartbeat_interval_seconds)
+
+
+async def _register(client: httpx.AsyncClient, settings: NodeSettings) -> None:
+    """Register this node's static capacity data with the gateway."""
+    payload = ProviderRegistration(
+        node_id=settings.node_id,
+        endpoint_url=TypeAdapter(HttpUrl).validate_python(settings.endpoint_url),
+        gpu_name=settings.gpu_name,
+        vram_gb=settings.vram_gb,
+        max_gpu_usage_percent=settings.max_gpu_usage_percent,
+        availability=settings.availability,
+    )
+    response = await client.post(
+        f"{settings.gateway_url}/providers/register",
+        json=payload.model_dump(mode="json"),
+        headers={"X-API-Key": settings.provider_api_key},
+    )
+    _ = response.raise_for_status()
+    LOGGER.info("Registered provider node %s", settings.node_id)
+
+
+async def _heartbeat_until_failure(client: httpx.AsyncClient, settings: NodeSettings) -> None:
+    """Send heartbeats until the gateway rejects or cannot receive one."""
+    while True:
+        await asyncio.sleep(settings.heartbeat_interval_seconds)
+        response = await client.post(
+            f"{settings.gateway_url}/providers/heartbeat",
+            json={"node_id": settings.node_id},
+            headers={"X-API-Key": settings.provider_api_key},
+        )
+        _ = response.raise_for_status()
+
+
+def _settings(app: FastAPI) -> NodeSettings:
+    """Return configured node settings, loading environment variables at startup."""
+    configured = cast("NodeSettings | None", app.state.settings)
+    if configured is None:
+        configured = NodeSettings.from_environment()
+        app.state.settings = configured
+    return configured
+
+
+def _require_provider_key(provided_key: str | None, expected_key: str) -> None:
+    """Reject requests that do not originate from an authenticated gateway."""
+    if provided_key is None or not compare_digest(provided_key, expected_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
 
 
 app = create_app()
